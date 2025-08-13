@@ -1,1 +1,12 @@
-ISONE_hist.json
+[
+  { "date_utc": "2025-08-03", "peak_hour_local": "16:00", "peak_mw": 19140 },
+  { "date_utc": "2025-08-04", "peak_hour_local": "16:00", "peak_mw": 20420 },
+  { "date_utc": "2025-08-05", "peak_hour_local": "17:00", "peak_mw": 21200 },
+  { "date_utc": "2025-08-06", "peak_hour_local": "16:00", "peak_mw": 20680 },
+  { "date_utc": "2025-08-07", "peak_hour_local": "16:00", "peak_mw": 19930 },
+  { "date_utc": "2025-08-08", "peak_hour_local": "15:00", "peak_mw": 19300 },
+  { "date_utc": "2025-08-09", "peak_hour_local": "16:00", "peak_mw": 19620 },
+  { "date_utc": "2025-08-10", "peak_hour_local": "16:00", "peak_mw": 20840 },
+  { "date_utc": "2025-08-11", "peak_hour_local": "17:00", "peak_mw": 21450 },
+  { "date_utc": "2025-08-12", "peak_hour_local": "16:00", "peak_mw": 20590 }
+]
