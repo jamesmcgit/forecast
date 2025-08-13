@@ -1,15 +1,20 @@
 [
   {
-    "datetime_utc": "2025-08-12T22:00:00Z",
+    "datetime_utc": "2025-08-12T19:00:00Z",
     "actual_mw": null,
-    "forecast": {
-      "p10_mw": 41000,
-      "p50_mw": 41800,
-      "p90_mw": 43200
-    },
-    "thresholds": {
-      "last30_p90_mw": 42000,
-      "last30_max_mw": 44000
-    }
+    "forecast_p10_mw": 41000,
+    "forecast_p50_mw": 41800,
+    "forecast_p90_mw": 43200,
+    "threshold_last30p90_mw": 42000,
+    "threshold_last30max_mw": 44000
+  },
+  {
+    "datetime_utc": "2025-08-13T19:00:00Z",
+    "actual_mw": null,
+    "forecast_p10_mw": 40900,
+    "forecast_p50_mw": 41750,
+    "forecast_p90_mw": 43100,
+    "threshold_last30p90_mw": 42000,
+    "threshold_last30max_mw": 44000
   }
 ]
