@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ISO 90-Day / 48-Hour Dashboard (Live JSON + Weather)</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root{--gap:16px}
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:24px;background:#fafafa;color:#111}
+  header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+  h1{font-size:1.2rem;margin:0}
+  .meta{color:#666;font-size:.9rem}
+  .grid{display:grid;gap:var(--gap);grid-template-columns:1fr}
+  @media(min-width:1100px){.grid{grid-template-columns:1fr 1fr}}
+  .card{background:#fff;border:1px solid #e7e7e7;border-radius:14px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,.04)}
+  .card h2{margin:0 0 8px 0;font-size:1rem}
+  .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .pill{border:1px solid #ddd;border-radius:999px;padding:2px 8px;font-size:.8rem;color:#333}
+  .err{color:#b00020;font-size:.9rem;margin-top:8px}
+  .note{color:#555;font-size:.85rem;margin-top:6px}
+  canvas{width:100%;height:340px}
+  button{border:1px solid #ddd;background:#fff;border-radius:10px;padding:8px 12px;cursor:pointer}
+  button:hover{background:#f3f3f3}
+</style>
+<!-- Chart.js + time adapter -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1"></script>
+</head>
+<body>
+<header>
+  <h1>ISO Peak Forecast — Live JSON + Weather Overlay</h1>
+  <div class="row">
+    <button id="refreshBtn">Refresh now</button>
+    <span class="meta">Auto-refresh hourly • Put JSON in <code>/data/*.json</code></span>
+  </div>
+</header>
+
+<section class="grid" id="grid"></section>
+
+<script>
+/* ============================
+   CONFIG
+   ============================ */
+
+// Which ISOs to show and their display labels
+const ISOS = [
+  { key: "CAISO", label: "CAISO (CA)", loc:[36.77,-119.42] },
+  { key: "NVE",   label: "NV Energy (NV)", loc:[36.17,-115.14] },
+  { key: "PJM",   label: "PJM (Mid-Atlantic)", loc:[39.95,-75.16] },
+  { key: "NYISO", label: "NYISO (NY)", loc:[40.71,-74.00] },
+  { key: "MISO",  label: "MISO (Midwest)", loc:[41.88,-87.63] },
+  { key: "SPP",   label: "SPP (Plains)", loc:[39.09,-94.58] },
+  { key: "ERCOT", label: "ERCOT (TX)", loc:[30.27,-97.74] }
+];
+
+// Local JSON path (same origin as this HTML)
+const DATA_ROOT = "./data";
+
+// Optional proxy base (ONLY if you set up a tiny proxy that enables CORS to ISO feeds)
+// Leave as empty string to use local JSON files.
+const PROXY_BASE = ""; // e.g. "https://your-worker.yourdomain.workers.dev"
+
+// Weather API (Open-Meteo: no key, CORS OK)
+const OPEN_METEO_BASE = "https://api.open-meteo.com/v1/forecast";
+
+// Refresh cadence
+const AUTO_REFRESH_MINUTES = 60;
+
+/* ============================
+   ABOUT FEEDS
+   ============================
+   This page supports two modes:
+
+   1) Local JSON (default) — Expect files like ./data/CAISO.json with the schema:
+      [
+        {"datetime_utc":"2025-08-12T00:00:00Z",
+         "actual_mw": 40123.4,
+         "forecast_p10_mw": null,
+         "forecast_p50_mw": 41800,
+         "forecast_p90_mw": 43200,
+         "threshold_last30p90_mw": 42000,
+         "threshold_last30max_mw": 44000
+        },
+        ...
+      ]
+
+   2) Proxy mode — If you later set PROXY_BASE to your serverless proxy,
+      you can map ISO keys to upstream ISO feed paths inside fetchIsoRows().
+      (By default we stick to local JSON so this works on GoDaddy without CORS issues.)
+*/
+
+/* ============================
+   UTILITIES
+   ============================ */
+
+function el(tag, attrs={}, html=""){
+  const e = document.createElement(tag);
+  for(const k in attrs){ e.setAttribute(k, attrs[k]); }
+  if(html) e.innerHTML = html;
+  return e;
+}
+
+async function fetchJSON(url){
+  const bust = url + (url.includes("?") ? "&" : "?") + "t=" + Date.now();
+  const res = await fetch(bust, { cache: "no-store" });
+  if(!res.ok) throw new Error(res.status + " " + res.statusText);
+  return res.json();
+}
+
+// Weather: get daily max temp for next 7 days for an ISO location
+async function fetchWeatherMaxTemp([lat,lon]){
+  const url = `${OPEN_METEO_BASE}?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max&forecast_days=7&timezone=UTC`;
+  const data = await fetchJSON(url);
+  return {
+    dates: data.daily.time,               // ["2025-08-12", ...]
+    tmax:  data.daily.temperature_2m_max  // [°C]
+  };
+}
+
+/* ============================
+   DATA LOADING
+   ============================ */
+
+async function fetchIsoRows(isoKey){
+  if(PROXY_BASE){
+    // >>> OPTIONAL: Example mapping if/when you have a proxy.
+    // return fetchJSON(`${PROXY_BASE}/caiso/7d`); // example
+    // For now, we fall back to local files even in proxy mode if not set up.
+  }
+  // Local JSON (default, works on GoDaddy)
+  return fetchJSON(`${DATA_ROOT}/${isoKey}.json`);
+}
+
+function buildDatasets(rows){
+  const xs = rows.map(r => new Date(r.datetime_utc));
+  const actual = rows.map(r => r.actual_mw ?? null);
+  const p10 = rows.map(r => r.forecast_p10_mw ?? null);
+  const p50 = rows.map(r => r.forecast_p50_mw ?? null);
+  const p90 = rows.map(r => r.forecast_p90_mw ?? null);
+
+  // thresholds (flat lines if present)
+  let t90 = null, tMax = null;
+  for(const r of rows){
+    if(t90 == null && r.threshold_last30p90_mw != null) t90 = r.threshold_last30p90_mw;
+    if(tMax == null && r.threshold_last30max_mw != null) tMax = r.threshold_last30max_mw;
+    if(t90 != null && tMax != null) break;
+  }
+  const th90 = xs.map(() => t90);
+  const thMax = xs.map(() => tMax);
+
+  return { xs, actual, p10, p50, p90, th90, thMax };
+}
+
+// Derive a simple daily summary for text status lines
+function summarizeDailyPeaks(rows){
+  const byDay = new Map();
+  for(const r of rows){
+    if(!r.datetime_utc) continue;
+    const t = new Date(r.datetime_utc);
+    const dayKey = t.toISOString().slice(0,10);
+    const val50 = r.forecast_p50_mw ?? r.actual_mw ?? null;
+    if(val50 == null) continue;
+    const cur = byDay.get(dayKey);
+    if(!cur || val50 > cur.val50){
+      byDay.set(dayKey, {
+        date: dayKey,
+        hourUTC: t.getUTCHours(),
+        val50,
+        val90: r.forecast_p90_mw ?? null,
+        th90: r.threshold_last30p90_mw ?? null,
+        thMax: r.threshold_last30max_mw ?? null
+      });
+    }
+  }
+  return Array.from(byDay.values()).sort((a,b)=>a.date.localeCompare(b.date));
+}
+
+/* ============================
+   RENDER
+   ============================ */
+
+const charts = {};
+
+function makeCard(iso){
+  const wrap = el("div", { class:"card", id:`card-${iso.key}` });
+  wrap.appendChild(el("h2",{}, iso.label));
+  const row = el("div",{class:"row"});
+  const tm = el("span",{class:"pill", id:`pill-temp-${iso.key}`}, "max temp: —");
+  const st = el("span",{class:"pill", id:`pill-status-${iso.key}`}, "loading…");
+  row.appendChild(tm); row.appendChild(st);
+  wrap.appendChild(row);
+  const canvas = el("canvas",{ id:`chart-${iso.key}` });
+  wrap.appendChild(canvas);
+  wrap.appendChild(el("div",{class:"note"},
+    "P50 line, P10–P90 band, last-14d actuals, and 30-day threshold lines (if provided in JSON)."
+  ));
+  wrap.appendChild(el("div",{class:"err", id:`err-${iso.key}`, style:"display:none"}));
+  return wrap;
+}
+
+function upsertChart(isoKey, data){
+  const ctx = document.getElementById(`chart-${isoKey}`);
+  if(charts[isoKey]) charts[isoKey].destroy();
+  charts[isoKey] = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: data.xs,
+      datasets: [
+        { label:'Actual (last 14d)', data:data.actual, spanGaps:true, pointRadius:0, borderWidth:1 },
+        { label:'Forecast P10', data:data.p10, spanGaps:true, pointRadius:0, borderWidth:0 },
+        { label:'Forecast P90', data:data.p90, spanGaps:true, pointRadius:0, borderWidth:0, fill:{target:'origin', above:true} },
+        { label:'Forecast P50', data:data.p50, spanGaps:true, pointRadius:0, borderWidth:1 },
+        { label:'30-day 90th pct', data:data.th90, pointRadius:0, borderWidth:1, borderDash:[6,4] },
+        { label:'30-day max', data:data.thMax, pointRadius:0, borderWidth:1, borderDash:[2,6] },
+      ]
+    },
+    options: {
+      responsive: true,
+      animation: false,
+      interaction: { intersect:false, mode:'index' },
+      parsing: false,
+      scales: {
+        x: { type:'time', time:{ unit:'day' } },
+        y: { title:{ display:true, text:'MW' }, beginAtZero:false }
+      },
+      plugins: {
+        legend: { position:'bottom' },
+        tooltip: {
+          callbacks: {
+            title: (items)=> new Date(items[0].parsed.x).toISOString().replace('T',' ').replace('Z',' UTC')
+          }
+        }
+      }
+    }
+  });
+}
+
+/* ============================
+   CONTROLLER
+   ============================ */
+
+async function loadISO(iso){
+  const err = document.getElementById(`err-${iso.key}`);
+  const pillStatus = document.getElementById(`pill-status-${iso.key}`);
+  const pillTemp = document.getElementById(`pill-temp-${iso.key}`);
+  err.style.display="none"; err.textContent="";
+
+  try{
+    pillStatus.textContent = "loading JSON…";
+    const rows = await fetchIsoRows(iso.key);
+    const ds = buildDatasets(rows);
+    upsertChart(iso.key, ds);
+
+    // derive a quick daily status
+    const daily = summarizeDailyPeaks(rows).slice(0,3);
+    const txt = daily.map(d=>{
+      const hh = String(d.hourUTC).padStart(2,"0")+":00 UTC";
+      const p50 = Math.round(d.val50).toLocaleString();
+      const p90 = d.val90 != null ? Math.round(d.val90).toLocaleString() : "—";
+      const risk = d.th90 != null ? (d.val50 >= d.th90 ? "≥70%" : "≤60%") : "—";
+      return `${d.date} • ${hh} • P50 ${p50} • P90 ${p90} • risk ${risk}`;
+    }).join(" | ");
+    pillStatus.textContent = txt || "no peak rows found";
+
+    // weather overlay (daily max °C → show today’s and tomorrow’s)
+    const wx = await fetchWeatherMaxTemp(iso.loc);
+    if(wx && wx.dates && wx.tmax){
+      const cToday = wx.tmax[0];
+      const cTomorrow = wx.tmax[1];
+      const fToday = Math.round(cToday*9/5+32);
+      const fTomorrow = Math.round(cTomorrow*9/5+32);
+      pillTemp.textContent = `max temp: today ${fToday}°F / tomorrow ${fTomorrow}°F`;
+    }else{
+      pillTemp.textContent = "max temp: —";
+    }
+
+  }catch(e){
+    err.textContent = `Failed to load: ${e.message}`;
+    err.style.display="block";
+    pillStatus.textContent = "error";
+  }
+}
+
+async function refreshAll(){
+  await Promise.all(ISOS.map(loadISO));
+}
+
+/* ============================
+   BOOT
+   ============================ */
+
+const grid = document.getElementById("grid");
+ISOS.forEach(iso => grid.appendChild(makeCard(iso)));
+
+document.getElementById("refreshBtn").addEventListener("click", refreshAll);
+refreshAll();
+setInterval(refreshAll, AUTO_REFRESH_MINUTES * 60 * 1000);
+
+/* ============================
+   OPTIONAL: Cloudflare Worker proxy (copy this to a Worker if you want live feeds)
+   -------------------------------------------------------------------------------
+   export default {
+     async fetch(request, env, ctx) {
+       const url = new URL(request.url);
+       // Example: GET https://<worker>/caiso/7d  → fetch CAISO feed and return with CORS
+       if (url.pathname.startsWith("/caiso/7d")) {
+         const upstream = "https://example-caiso-feed.example/7d.json"; // set to real ISO endpoint
+         const res = await fetch(upstream);
+         const body = await res.arrayBuffer();
+         return new Response(body, {
+           status: res.status,
+           headers: {
+             "content-type": "application/json",
+             "access-control-allow-origin": "*",
+             "cache-control": "no-store"
+           }
+         });
+       }
+       return new Response("ok", { status:200 });
+     }
+   }
+*/
+</script>
+</body>
+</html>
