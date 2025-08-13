@@ -1,0 +1,20 @@
+[
+  {
+    "datetime_utc": "2025-08-12T22:00:00Z",
+    "actual_mw": null,
+    "forecast_p10_mw": 83000,
+    "forecast_p50_mw": 84000,
+    "forecast_p90_mw": 86000,
+    "threshold_last30p90_mw": 84500,
+    "threshold_last30max_mw": 85900
+  },
+  {
+    "datetime_utc": "2025-08-13T22:00:00Z",
+    "actual_mw": null,
+    "forecast_p10_mw": 82800,
+    "forecast_p50_mw": 83800,
+    "forecast_p90_mw": 85800,
+    "threshold_last30p90_mw": 84500,
+    "threshold_last30max_mw": 85900
+  }
+]

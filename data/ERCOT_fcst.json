@@ -1,0 +1,9 @@
+[
+  { "date_utc": "2025-08-13", "peak_hour_local": "18:00", "forecast_p10_mw": 86000, "forecast_p50_mw": 88500, "forecast_p90_mw": 90000, "threshold_last30p90_mw": 86000, "threshold_last30max_mw": 92000, "risk_pct": 66 },
+  { "date_utc": "2025-08-14", "peak_hour_local": "18:00", "forecast_p10_mw": 87500, "forecast_p50_mw": 89500, "forecast_p90_mw": 91000, "threshold_last30p90_mw": 86000, "threshold_last30max_mw": 92000, "risk_pct": 76 },
+  { "date_utc": "2025-08-15", "peak_hour_local": "19:00", "forecast_p10_mw": 88500, "forecast_p50_mw": 90500, "forecast_p90_mw": 92000, "threshold_last30p90_mw": 86000, "threshold_last30max_mw": 92000, "risk_pct": 84 },
+  { "date_utc": "2025-08-16", "peak_hour_local": "18:00", "forecast_p10_mw": 85500, "forecast_p50_mw": 87800, "forecast_p90_mw": 89500, "threshold_last30p90_mw": 86000, "threshold_last30max_mw": 92000, "risk_pct": 62 },
+  { "date_utc": "2025-08-17", "peak_hour_local": "18:00", "forecast_p10_mw": 87000, "forecast_p50_mw": 89300, "forecast_p90_mw": 90800, "threshold_last30p90_mw": 86000, "threshold_last30max_mw": 92000, "risk_pct": 74 },
+  { "date_utc": "2025-08-18", "peak_hour_local": "18:00", "forecast_p10_mw": 88000, "forecast_p50_mw": 90500, "forecast_p90_mw": 92000, "threshold_last30p90_mw": 86000, "threshold_last30max_mw": 92000, "risk_pct": 82 },
+  { "date_utc": "2025-08-19", "peak_hour_local": "18:00", "forecast_p10_mw": 89000, "forecast_p50_mw": 91500, "forecast_p90_mw": 93000, "threshold_last30p90_mw": 86000, "threshold_last30max_mw": 92000, "risk_pct": 89 }
+]

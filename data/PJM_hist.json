@@ -1,0 +1,15 @@
+[
+  { "date_utc": "2025-07-31", "peak_hour_local": "17:00", "peak_mw": 128400 },
+  { "date_utc": "2025-08-01", "peak_hour_local": "17:00", "peak_mw": 126900 },
+  { "date_utc": "2025-08-02", "peak_hour_local": "16:00", "peak_mw": 122300 },
+  { "date_utc": "2025-08-03", "peak_hour_local": "17:00", "peak_mw": 123700 },
+  { "date_utc": "2025-08-04", "peak_hour_local": "17:00", "peak_mw": 129800 },
+  { "date_utc": "2025-08-05", "peak_hour_local": "17:00", "peak_mw": 132600 },
+  { "date_utc": "2025-08-06", "peak_hour_local": "16:00", "peak_mw": 130200 },
+  { "date_utc": "2025-08-07", "peak_hour_local": "17:00", "peak_mw": 127900 },
+  { "date_utc": "2025-08-08", "peak_hour_local": "16:00", "peak_mw": 125100 },
+  { "date_utc": "2025-08-09", "peak_hour_local": "17:00", "peak_mw": 126300 },
+  { "date_utc": "2025-08-10", "peak_hour_local": "17:00", "peak_mw": 131400 },
+  { "date_utc": "2025-08-11", "peak_hour_local": "17:00", "peak_mw": 133900 },
+  { "date_utc": "2025-08-12", "peak_hour_local": "16:00", "peak_mw": 130900 }
+]
