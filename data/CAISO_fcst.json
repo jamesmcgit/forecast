@@ -1,0 +1,35 @@
+[
+  {
+    "date_utc": "2025-08-13",
+    "peak_hour_local": "17:00",
+    "forecast_p10_mw": 41000,
+    "forecast_p50_mw": 41800,
+    "forecast_p90_mw": 43200,
+    "threshold_last30p90_mw": 42000,
+    "threshold_last30max_mw": 44000,
+    "risk_pct": 75,
+    "risk_flag": "MODERATE"
+  },
+  {
+    "date_utc": "2025-08-14",
+    "peak_hour_local": "16:00",
+    "forecast_p10_mw": 40500,
+    "forecast_p50_mw": 41550,
+    "forecast_p90_mw": 42800,
+    "threshold_last30p90_mw": 42000,
+    "threshold_last30max_mw": 44000,
+    "risk_pct": 68,
+    "risk_flag": "LOW"
+  },
+  {
+    "date_utc": "2025-08-15",
+    "peak_hour_local": "17:00",
+    "forecast_p10_mw": 41200,
+    "forecast_p50_mw": 42150,
+    "forecast_p90_mw": 43500,
+    "threshold_last30p90_mw": 42000,
+    "threshold_last30max_mw": 44000,
+    "risk_pct": 85,
+    "risk_flag": "HIGH"
+  }
+]
