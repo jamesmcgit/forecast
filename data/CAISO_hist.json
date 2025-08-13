@@ -1,4 +1,3 @@
-[
   { "date_utc": "2025-07-31", "peak_hour_local": "17:00", "peak_mw": 43210 },
   { "date_utc": "2025-08-01", "peak_hour_local": "17:00", "peak_mw": 42850 },
   { "date_utc": "2025-08-02", "peak_hour_local": "16:00", "peak_mw": 41980 },
@@ -12,4 +11,3 @@
   { "date_utc": "2025-08-10", "peak_hour_local": "17:00", "peak_mw": 43540 },
   { "date_utc": "2025-08-11", "peak_hour_local": "18:00", "peak_mw": 44110 },
   { "date_utc": "2025-08-12", "peak_hour_local": "17:00", "peak_mw": 43620 }
-]
