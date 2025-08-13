@@ -1,0 +1,12 @@
+[
+  { "date_utc": "2025-07-14", "peak_hour_local": "17:00", "peak_mw": 40500 },
+  { "date_utc": "2025-07-15", "peak_hour_local": "16:00", "peak_mw": 41020 },
+  { "date_utc": "2025-07-16", "peak_hour_local": "17:00", "peak_mw": 39980 },
+  { "date_utc": "2025-07-17", "peak_hour_local": "17:00", "peak_mw": 41210 },
+  { "date_utc": "2025-07-18", "peak_hour_local": "16:00", "peak_mw": 42050 },
+  { "date_utc": "2025-07-19", "peak_hour_local": "17:00", "peak_mw": 41530 },
+  { "date_utc": "2025-07-20", "peak_hour_local": "16:00", "peak_mw": 40700 },
+  { "date_utc": "2025-07-21", "peak_hour_local": "17:00", "peak_mw": 40210 },
+  { "date_utc": "2025-07-22", "peak_hour_local": "17:00", "peak_mw": 41780 },
+  { "date_utc": "2025-07-23", "peak_hour_local": "16:00", "peak_mw": 42300 }
+]
