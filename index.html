@@ -135,21 +135,24 @@ function computeRiskDaily(day){
 function riskBadgeClass(r){ if(r==null) return "risk risk-na"; if(r>=80) return "risk risk-alert"; if(r>=70) return "risk risk-caution"; return "risk risk-ok"; }
 function rowRiskClass(r){ if(r==null) return ""; if(r>=80) return "row-alert"; if(r>=70) return "row-caution"; return ""; }
 
-/* ====== CHART RISK SHADING (hardened plugin) ====== */
+<script>
+/* SAFER RISK SHADING PLUGIN — runs after the chart renders */
 const riskBackgroundPlugin = {
   id: 'riskBackground',
-  beforeDraw(chart, args, opts){
-    if(!chart || !chart.ctx || !chart.chartArea) return;
-    const scales = chart.scales || {};
-    const x = scales.x;
-    if(!x || typeof x.getPixelForValue !== 'function') return;
+  afterRender(chart, _args, opts){
+    // Hard guards: chart, ctx, chartArea, and x-scale must exist
+    if (!chart || !chart.ctx || !chart.chartArea) return;
+    const x = chart.scales && chart.scales.x;
+    if (!x || typeof x.getPixelForValue !== 'function') return;
+
     const { top, bottom } = chart.chartArea;
     const blocks = (opts && Array.isArray(opts.blocks)) ? opts.blocks : [];
     for (const b of blocks) {
-      if(!b || !b.date || !b.level) continue;
+      if (!b || !b.date || !b.level) continue;
       const start = x.getPixelForValue(new Date(b.date + "T00:00:00Z"));
       const end   = x.getPixelForValue(new Date(b.date + "T23:59:59Z"));
-      if(!Number.isFinite(start) || !Number.isFinite(end)) continue;
+      if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
+
       const { ctx } = chart;
       ctx.save();
       ctx.fillStyle = (b.level === 'alert') ? 'rgba(255,0,0,0.07)' : 'rgba(255,165,0,0.08)';
@@ -158,6 +161,10 @@ const riskBackgroundPlugin = {
     }
   }
 };
+
+// Register once (global)
+Chart.register(riskBackgroundPlugin);
+</script>
 
 /* ====== RENDER ====== */
 const charts = {};
@@ -210,31 +217,40 @@ function freshCanvas(isoKey){
   return neu.getContext('2d');
 }
 
+<script>
 function upsertChart(isoKey, series, riskBlocks){
   const ctx = freshCanvas(isoKey);
+  if (!ctx) return;
+
+  // Build the master date axis
   const xs = Array.from(new Set([
     ...series.lb.map(d=>d.date_utc),
     ...series.fx.map(d=>d.date_utc),
     ...series.wPast.map(d=>d.date),
     ...series.wNext.map(d=>d.date)
-  ])).sort();
+  ].filter(Boolean))).sort();
+
+  // Ensure at least one label so scales initialize
+  const labelDates = (xs.length ? xs : [new Date().toISOString().slice(0,10)]);
+  const labels = labelDates.map(d => new Date(d+"T00:00:00Z"));
 
   const mapBy = (arr, field) => {
     const m = new Map(arr.map(d=>[(d.date_utc||d.date), d[field]]));
-    return xs.map(x=> m.get(x) ?? null);
+    return labelDates.map(x=> m.get(x) ?? null);
   };
 
   const lb   = mapBy(series.lb, 'peak_mw');
   const fx10 = mapBy(series.fx, 'forecast_p10_mw');
   const fx50 = mapBy(series.fx, 'forecast_p50_mw');
   const fx90 = mapBy(series.fx, 'forecast_p90_mw');
-  const tmax = xs.map(d => (series.wPast.find(w=>w.date===d)?.tmax) ?? (series.wNext.find(w=>w.date===d)?.tmax) ?? null);
-  const tmin = xs.map(d => (series.wPast.find(w=>w.date===d)?.tmin) ?? (series.wNext.find(w=>w.date===d)?.tmin) ?? null);
 
-  charts[isoKey] = new Chart(ctx, {
+  const tmax = labelDates.map(d => (series.wPast.find(w=>w.date===d)?.tmax) ?? (series.wNext.find(w=>w.date===d)?.tmax) ?? null);
+  const tmin = labelDates.map(d => (series.wPast.find(w=>w.date===d)?.tmin) ?? (series.wNext.find(w=>w.date===d)?.tmin) ?? null);
+
+  new Chart(ctx, {
     type: 'line',
     data: {
-      labels: xs.map(d => new Date(d+"T00:00:00Z")),
+      labels,
       datasets: [
         { label:'Daily Peak (Lookback)', data:lb,  yAxisID:'yMW', pointRadius:0, borderWidth:2 },
         { label:'Outlook P10',           data:fx10, yAxisID:'yMW', pointRadius:0, borderWidth:0 },
@@ -252,12 +268,15 @@ function upsertChart(isoKey, series, riskBlocks){
         yMW:{ position:'left',  title:{display:true,text:'MW'}, beginAtZero:false },
         yT:{  position:'right', title:{display:true,text:'°F'}, beginAtZero:false, grid:{ drawOnChartArea:false } }
       },
-      plugins:{ legend:{ position:'bottom' } }
-    },
-    plugins: [riskBackgroundPlugin],
-    riskBackground: { blocks: riskBlocks || [] }
+      plugins:{
+        legend:{ position:'bottom' },
+        // <<< plugin options go here >>>
+        riskBackground: { blocks: riskBlocks || [] }
+      }
+    }
   });
 }
+</script>
 
 function renderPast7Table(iso, lb, wxPast){
   const tbody = document.querySelector(`#tblPast-${iso.key} tbody`);
