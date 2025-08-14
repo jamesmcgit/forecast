@@ -1,384 +1,275 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>ISO Peaks — 30-day Lookback & Outlook + Weather + Risk</title>
-<style>
-  :root{--gap:16px}
-  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;background:#f7f7f9;color:#111}
-  header{padding:16px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
-  h1{font-size:1.05rem;margin:0}
-  .meta{color:#666;font-size:.9rem}
-  .grid{display:grid;gap:var(--gap);grid-template-columns:1fr;padding:16px}
-  @media(min-width:1100px){.grid{grid-template-columns:1fr 1fr}}
-  .card{background:#fff;border:1px solid #e6e6ea;border-radius:14px;padding:14px;box-shadow:0 2px 8px rgba(0,0,0,.04)}
-  .card h2{margin:0 0 8px 0;font-size:1rem}
-  .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
-  .pill{border:1px solid #ddd;border-radius:999px;padding:3px 10px;font-size:.8rem;color:#333}
-  .err{color:#b00020;font-size:.9rem;margin-top:8px;display:none}
-  canvas{width:100%;height:360px}
-  button{border:1px solid #ddd;background:#fff;border-radius:10px;padding:8px 12px;cursor:pointer}
-  button:hover{background:#f0f0f0}
-  table{width:100%;border-collapse:collapse;margin-top:10px;font-size:.92rem}
-  th,td{border-top:1px solid #eee;padding:6px 8px;text-align:center}
-  thead th{background:#fafafa}
-  .subtle{color:#666;font-size:.85rem}
-  /* Risk badges + row tint */
-  .risk { font-weight:600; padding:2px 8px; border-radius:999px; display:inline-block; min-width:54px; }
-  .risk-alert { background:#ffe8e8; color:#a40000; border:1px solid #f4bebe; }
-  .risk-caution { background:#fff3dd; color:#9a5600; border:1px solid #f1d39c; }
-  .risk-ok { background:#e9f7ef; color:#0b5d2a; border:1px solid #c9edd7; }
-  .risk-na { background:#eee; color:#666; border:1px solid #ddd; }
-  .row-alert { background:#fff4f4; }   /* ≥80% */
-  .row-caution { background:#fff9ed; } /* 70–79.9% */
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ISO Daily Peaks — 30-Day Lookback & Forecast</title>
+  <style>
+    :root { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial; }
+    body { margin: 16px; }
+    h1 { margin: 0 0 8px; font-size: 1.5rem; }
+    .toolbar { display:flex; gap:8px; flex-wrap: wrap; align-items:center; margin-bottom: 12px; }
+    .toolbar a, .toolbar button { padding: 8px 10px; border-radius: 8px; border: 1px solid #ddd; background: #fafafa; cursor: pointer; text-decoration:none; }
+    .toolbar button:hover, .toolbar a:hover { background: #f0f0f0; }
+    .small { font-size: .9rem; color:#555; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; }
+    .card { border: 1px solid #e6e6e6; border-radius: 12px; padding: 12px; background:white; }
+    .card h2 { margin: 0 0 4px; font-size: 1.1rem; }
+    .meta { display:flex; gap:12px; flex-wrap:wrap; font-size:.9rem; color:#444; margin-bottom: 8px; }
+    .diag { margin-top: 14px; padding: 12px; border:1px dashed #ddd; border-radius: 10px; background:#fcfcfc; }
+    .ok { color: #157347; }
+    .bad { color: #b00020; }
+    canvas { width: 100%; height: 260px; }
+  </style>
+  <!-- Chart.js (defer so DOM is ready first) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" defer></script>
+  <script defer>
+  // ---------- Utilities ----------
+  const tz = 'America/Los_Angeles';
 
-  /* Diagnostics */
-  details{margin:0 16px 16px;border-top:1px dashed #ddd;padding-top:10px}
-  .diag-list{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-  .diag-item{display:flex;justify-content:space-between;gap:8px;background:#fff;border:1px solid #eee;border-radius:10px;padding:6px 10px;font-size:.9rem}
-  .ok{color:#0b5d2a}
-  .fail{color:#b00020}
-</style>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1"></script>
-</head>
-<body>
-<header>
-  <h1>ISO Daily Peaks — 30-Day Lookback & 30-Day Outlook + Weather</h1>
-  <div class="row">
-    <button id="btnRefresh">Refresh now</button>
-    <span class="meta" id="stamp">last update: —</span>
-  </div>
-</header>
-
-<details open>
-  <summary><strong>Diagnostics</strong> (verifies every JSON file is reachable)</summary>
-  <div class="row" style="margin:10px 0">
-    <div class="pill">Repo: <span id="repoLabel"></span></div>
-    <button id="btnDiag">Run file checks</button>
-    <span class="meta" id="diagStamp">—</span>
-  </div>
-  <div id="diag" class="diag-list"></div>
-</details>
-
-<section id="grid" class="grid"></section>
-
-<script>
-/* ====== CONFIG (edit here if your repo/branch changes) ====== */
-const GH_OWNER  = "jamesmcgit";
-const GH_REPO   = "forecast";
-const GH_BRANCH = "main";
-const DATA_DIR  = "data"; // folder containing the JSONs
-const DATA_BASE = `https://cdn.jsdelivr.net/gh/${GH_OWNER}/${GH_REPO}@${GH_BRANCH}/${DATA_DIR}/`;
-const REFRESH_MS = 60 * 1000;
-
-/* ISOs + canonical time zones + representative coords for weather */
-const ISOS = [
-  { key:"CAISO", label:"CAISO (CA)",   tz:"America/Los_Angeles", loc:[36.77,-119.42] },
-  { key:"ISONE", label:"ISO-NE (NE)",  tz:"America/New_York",    loc:[42.36,-71.06]  },
-  { key:"PJM",   label:"PJM (MAAC)",   tz:"America/New_York",    loc:[39.95,-75.16]  },
-  { key:"NYISO", label:"NYISO (NY)",   tz:"America/New_York",    loc:[40.71,-74.00]  },
-  { key:"MISO",  label:"MISO (MW)",    tz:"America/Chicago",     loc:[41.88,-87.63]  },
-  { key:"SPP",   label:"SPP (Plains)", tz:"America/Chicago",     loc:[39.09,-94.58]  },
-  { key:"ERCOT", label:"ERCOT (TX)",   tz:"America/Chicago",     loc:[30.27,-97.74]  }
-];
-document.getElementById("repoLabel").textContent = `${GH_OWNER}/${GH_REPO}@${GH_BRANCH}/${DATA_DIR}`;
-
-const { DateTime } = luxon;
-
-/* ====== FETCH ====== */
-async function fetchJSON(url){
-  const bust = url + (url.includes("?")?"&":"?") + "t=" + Date.now();
-  const res = await fetch(bust, { cache:"no-store" });
-  if(!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
-  return res.json();
-}
-async function loadDailyFiles(isoKey){
-  let hist=[], fcst=[];
-  try { hist = await fetchJSON(`${DATA_BASE}${isoKey}_hist.json`); } catch(_){}
-  try { fcst = await fetchJSON(`${DATA_BASE}${isoKey}_fcst.json`); } catch(_){}
-  return {hist, fcst};
-}
-
-/* ====== WEATHER (Open-Meteo) ====== */
-function ymd(d){ return d.toISOString().slice(0,10); }
-async function fetchWeatherDaily(lat, lon){
-  const now = new Date();
-  const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const pastStart = new Date(todayUTC); pastStart.setUTCDate(pastStart.getUTCDate() - 30);
-  const pastEnd   = new Date(todayUTC); pastEnd.setUTCDate(pastEnd.getUTCDate() - 1);
-  const histURL = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}&start_date=${ymd(pastStart)}&end_date=${ymd(pastEnd)}&daily=temperature_2m_max,temperature_2m_min&timezone=UTC`;
-  const fcstURL = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max,temperature_2m_min&forecast_days=16&timezone=UTC`;
-  let hist = { time:[], temperature_2m_max:[], temperature_2m_min:[] };
-  let fcst = { daily:{ time:[], temperature_2m_max:[], temperature_2m_min:[] } };
-  try{ const h = await fetchJSON(histURL); hist = h?.daily || hist; }catch(_){}
-  try{ const f = await fetchJSON(fcstURL); fcst = f || fcst; }catch(_){}
-  const c2f = x => Math.round((x*9/5)+32);
-  const past = (hist.time||[]).map((d,i)=>({ date:d, tmax:c2f(hist.temperature_2m_max[i]), tmin:c2f(hist.temperature_2m_min[i]) }));
-  const next = (fcst.daily.time||[]).map((d,i)=>({ date:d, tmax:c2f(fcst.daily.temperature_2m_max[i]), tmin:c2f(fcst.daily.temperature_2m_min[i]) }));
-  return { past, next };
-}
-
-/* ====== RISK (daily) ====== */
-function computeRiskDaily(day){
-  if (Number.isFinite(day?.risk_pct)) return +day.risk_pct;
-  const p50 = day?.forecast_p50_mw, th90 = day?.threshold_last30p90_mw, thMx = day?.threshold_last30max_mw;
-  if(Number.isFinite(p50) && Number.isFinite(th90) && Number.isFinite(thMx) && thMx>th90){
-    const pct = ((p50 - th90) / (thMx - th90)) * 100;
-    return Math.max(0, Math.min(100, +pct.toFixed(1)));
-  }
-  if(Number.isFinite(p50) && Number.isFinite(th90)) return p50 >= th90 ? 70 : 60;
-  return null;
-}
-function riskBadgeClass(r){ if(r==null) return "risk risk-na"; if(r>=80) return "risk risk-alert"; if(r>=70) return "risk risk-caution"; return "risk risk-ok"; }
-function rowRiskClass(r){ if(r==null) return ""; if(r>=80) return "row-alert"; if(r>=70) return "row-caution"; return ""; }
-
-/* ====== CHART RISK SHADING (hardened plugin) ====== */
-const riskBackgroundPlugin = {
-  id: 'riskBackground',
-  beforeDraw(chart, args, opts){
-    if(!chart || !chart.ctx || !chart.chartArea) return;
-    const scales = chart.scales || {};
-    const x = scales.x;
-    if(!x || typeof x.getPixelForValue !== 'function') return;
-    const { top, bottom } = chart.chartArea;
-    const blocks = (opts && Array.isArray(opts.blocks)) ? opts.blocks : [];
-    for (const b of blocks) {
-      if(!b || !b.date || !b.level) continue;
-      const start = x.getPixelForValue(new Date(b.date + "T00:00:00Z"));
-      const end   = x.getPixelForValue(new Date(b.date + "T23:59:59Z"));
-      if(!Number.isFinite(start) || !Number.isFinite(end)) continue;
-      const { ctx } = chart;
-      ctx.save();
-      ctx.fillStyle = (b.level === 'alert') ? 'rgba(255,0,0,0.07)' : 'rgba(255,165,0,0.08)';
-      ctx.fillRect(Math.min(start,end), top, Math.abs(end-start), bottom - top);
-      ctx.restore();
-    }
-  }
-};
-
-/* ====== RENDER ====== */
-const charts = {};
-function makeCard(iso){
-  const el = document.createElement("div");
-  el.className="card"; el.id=`card-${iso.key}`;
-  el.innerHTML = `
-    <h2>${iso.label} <span class="subtle">(${iso.tz.replace('_',' ')})</span></h2>
-    <div class="row"><span class="pill" id="pill-${iso.key}">loading…</span></div>
-    <div id="canvasWrap-${iso.key}"><canvas id="chart-${iso.key}"></canvas></div>
-    <div class="err" id="err-${iso.key}"></div>
-
-    <div class="subtle" style="margin-top:10px;">Past 7 days — observed peak hour (local time)</div>
-    <table id="tblPast-${iso.key}">
-      <thead><tr><th>Date</th><th>Peak Hour (local)</th><th>Actual Peak (MW)</th><th>Tmax / Tmin (°F)</th></tr></thead>
-      <tbody></tbody>
-    </table>
-
-    <div class="subtle" style="margin-top:14px;">Next 7 days — predicted peak hour (local time)</div>
-    <table id="tblNext-${iso.key}">
-      <thead><tr>
-        <th>Date</th><th>Peak Hour (local)</th><th>P50 (MW)</th><th>P90 (MW)</th>
-        <th>30d 90th</th><th>30d Max</th><th>Risk</th>
-      </tr></thead>
-      <tbody></tbody>
-    </table>
-  `;
-  return el;
-}
-
-// Safe canvas lifecycle
-function freshCanvas(isoKey){
-  const wrap = document.getElementById(`canvasWrap-${isoKey}`);
-  if(!wrap){
-    const card = document.getElementById(`card-${isoKey}`);
-    const div = document.createElement('div');
-    div.id = `canvasWrap-${isoKey}`;
-    card.insertBefore(div, card.querySelector(`#err-${isoKey}`));
-  }
-  const old = document.getElementById(`chart-${isoKey}`);
-  if (old) {
-    const existing = Chart.getChart(old);
-    if (existing) existing.destroy();
-  }
-  const neu = document.createElement('canvas');
-  neu.id = `chart-${isoKey}`;
-  const cw = document.getElementById(`canvasWrap-${isoKey}`);
-  if (old && old.parentNode) old.parentNode.replaceChild(neu, old);
-  else { cw.innerHTML = ''; cw.appendChild(neu); }
-  return neu.getContext('2d');
-}
-
-function upsertChart(isoKey, series, riskBlocks){
-  const ctx = freshCanvas(isoKey);
-  const xs = Array.from(new Set([
-    ...series.lb.map(d=>d.date_utc),
-    ...series.fx.map(d=>d.date_utc),
-    ...series.wPast.map(d=>d.date),
-    ...series.wNext.map(d=>d.date)
-  ])).sort();
-
-  const mapBy = (arr, field) => {
-    const m = new Map(arr.map(d=>[(d.date_utc||d.date), d[field]]));
-    return xs.map(x=> m.get(x) ?? null);
+  // Make URL paths safe for GitHub Project Pages subpaths (e.g., /forecast/)
+  const urlFor = (p) => {
+    const basePath = window.location.pathname.endsWith('/')
+      ? window.location.pathname
+      : window.location.pathname.replace(/[^/]*$/, '');
+    const rel = p.startsWith('./') ? p : `./${p}`;
+    return new URL(rel, `${window.location.origin}${basePath}`).toString();
   };
 
-  const lb   = mapBy(series.lb, 'peak_mw');
-  const fx10 = mapBy(series.fx, 'forecast_p10_mw');
-  const fx50 = mapBy(series.fx, 'forecast_p50_mw');
-  const fx90 = mapBy(series.fx, 'forecast_p90_mw');
-  const tmax = xs.map(d => (series.wPast.find(w=>w.date===d)?.tmax) ?? (series.wNext.find(w=>w.date===d)?.tmax) ?? null);
-  const tmin = xs.map(d => (series.wPast.find(w=>w.date===d)?.tmin) ?? (series.wNext.find(w=>w.date===d)?.tmin) ?? null);
+  const fmtTime = (d) => new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, hour: '2-digit', minute: '2-digit'
+  }).format(d);
 
-  charts[isoKey] = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: xs.map(d => new Date(d+"T00:00:00Z")),
-      datasets: [
-        { label:'Daily Peak (Lookback)', data:lb,  yAxisID:'yMW', pointRadius:0, borderWidth:2 },
-        { label:'Outlook P10',           data:fx10, yAxisID:'yMW', pointRadius:0, borderWidth:0 },
-        { label:'Outlook P90',           data:fx90, yAxisID:'yMW', pointRadius:0, borderWidth:0, fill:{target:'origin', above:true} },
-        { label:'Outlook P50',           data:fx50, yAxisID:'yMW', pointRadius:0, borderWidth:2 },
-        { label:'Tmax (°F)',             data:tmax, yAxisID:'yT',  pointRadius:0, borderWidth:1 },
-        { label:'Tmin (°F)',             data:tmin, yAxisID:'yT',  pointRadius:0, borderWidth:1 }
-      ]
-    },
-    options: {
-      responsive:true, animation:false, parsing:false,
-      interaction:{ mode:'index', intersect:false },
-      scales:{
-        x:{ type:'time', time:{ unit:'day' } },
-        yMW:{ position:'left',  title:{display:true,text:'MW'}, beginAtZero:false },
-        yT:{  position:'right', title:{display:true,text:'°F'}, beginAtZero:false, grid:{ drawOnChartArea:false } }
+  const fmtDateTime = (d) => new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, year:'numeric', month:'short', day:'2-digit',
+    hour:'2-digit', minute:'2-digit'
+  }).format(d);
+
+  async function fetchJSONSafe(path) {
+    const url = urlFor(path);
+    try {
+      const r = await fetch(url, { cache: 'no-store' });
+      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      return await r.json();
+    } catch (e) {
+      console.warn('fetchJSONSafe error', path, e);
+      return { __error: e.message || String(e) };
+    }
+  }
+
+  // ---------- App Config ----------
+  // Add/remove ISOs here. Keep filenames exactly as on disk under /data/
+  const isoConfigs = [
+    { id: 'CAISO', label: 'CAISO', hist: 'data/CAISO_hist.json', fcst: 'data/CAISO_fcst.json' },
+    { id: 'PGE',   label: 'PG&E',  hist: 'data/PGE_hist.json',   fcst: 'data/PGE_fcst.json'   },
+    { id: 'SCE',   label: 'SCE',   hist: 'data/SCE_hist.json',   fcst: 'data/SCE_fcst.json'   },
+    { id: 'SDGE',  label: 'SDG&E', hist: 'data/SDGE_hist.json',  fcst: 'data/SDGE_fcst.json'  },
+    // Add more as needed...
+  ];
+
+  // Keep Chart.js instances to safely destroy before re-render
+  const charts = {};
+
+  function renderLineChart(canvasId, labels, histSeries, fcstSeries) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return console.warn('Missing canvas', canvasId);
+    const ctx = canvas.getContext('2d');
+    if (charts[canvasId]) charts[canvasId].destroy();
+
+    charts[canvasId] = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: 'History', data: histSeries, tension: 0.25, pointRadius: 0 },
+          { label: 'Forecast', data: fcstSeries, tension: 0.25, pointRadius: 0, borderDash: [6, 4] }
+        ]
       },
-      plugins:{ legend:{ position:'bottom' } }
-    },
-    plugins: [riskBackgroundPlugin],
-    riskBackground: { blocks: riskBlocks || [] }
-  });
-}
-
-function renderPast7Table(iso, lb, wxPast){
-  const tbody = document.querySelector(`#tblPast-${iso.key} tbody`);
-  tbody.innerHTML = "";
-  const wxMap = new Map(wxPast.map(d => [d.date, d]));
-  lb.slice(-7).forEach(d=>{
-    const wx = wxMap.get(d.date_utc);
-    const p  = Number.isFinite(d.peak_mw) ? Math.round(d.peak_mw).toLocaleString() : "—";
-    const tmax = wx ? wx.tmax : "—";
-    const tmin = wx ? wx.tmin : "—";
-    const local = d.peak_hour_local || "—";
-    tbody.insertAdjacentHTML("beforeend", `
-      <tr><td>${d.date_utc}</td><td>${local} ${iso.tz.split('/')[1]}</td><td>${p}</td><td>${tmax} / ${tmin}</td></tr>
-    `);
-  });
-}
-
-function renderNext7Table(iso, fx){
-  const tbody = document.querySelector(`#tblNext-${iso.key} tbody`);
-  tbody.innerHTML = "";
-  fx.slice(0,7).forEach(d=>{
-    const r = computeRiskDaily(d);
-    const cls = rowRiskClass(r), badge = riskBadgeClass(r);
-    const p50 = Number.isFinite(d.forecast_p50_mw) ? Math.round(d.forecast_p50_mw).toLocaleString() : "—";
-    const p90 = Number.isFinite(d.forecast_p90_mw) ? Math.round(d.forecast_p90_mw).toLocaleString() : "—";
-    const th90 = Number.isFinite(d.threshold_last30p90_mw) ? Math.round(d.threshold_last30p90_mw).toLocaleString() : "—";
-    const thMx = Number.isFinite(d.threshold_last30max_mw) ? Math.round(d.threshold_last30max_mw).toLocaleString() : "—";
-    const local = d.peak_hour_local || "—";
-    const riskTxt = (r==null) ? "N/A" : `${r}%`;
-    tbody.insertAdjacentHTML("beforeend", `
-      <tr class="${cls}">
-        <td>${d.date_utc}</td><td>${local} ${iso.tz.split('/')[1]}</td>
-        <td>${p50}</td><td>${p90}</td><td>${th90}</td><td>${thMx}</td>
-        <td><span class="${badge}">${riskTxt}</span></td>
-      </tr>
-    `);
-  });
-}
-
-/* ====== CONTROLLER ====== */
-async function loadISO(iso){
-  const pill = document.getElementById(`pill-${iso.key}`);
-  const err  = document.getElementById(`err-${iso.key}`);
-  err.style.display="none"; err.textContent="";
-  try{
-    pill.textContent = "loading data…";
-    const {hist, fcst} = await loadDailyFiles(iso.key);
-    const lb = (hist||[]).slice().sort((a,b)=> a.date_utc.localeCompare(b.date_utc)).slice(-30);
-    const fx = (fcst||[]).slice().sort((a,b)=> a.date_utc.localeCompare(b.date_utc)).slice(0,30);
-
-    const riskBlocks = fx.map(d=>{
-      const r = computeRiskDaily(d);
-      if(r==null) return null;
-      return { date: d.date_utc, level: (r>=80)?'alert':(r>=70?'caution':null) };
-    }).filter(Boolean);
-
-    const wx = await fetchWeatherDaily(iso.loc[0], iso.loc[1]);
-
-    upsertChart(iso.key, { lb, fx, wPast: wx.past, wNext: wx.next }, riskBlocks);
-    renderPast7Table(iso, lb, wx.past);
-    renderNext7Table(iso, fx);
-
-    const lastLB = lb[lb.length-1], firstFX = fx[0];
-    const txt = [
-      lastLB ? `last: ${lastLB.date_utc} ~ ${Math.round(lastLB.peak_mw).toLocaleString()} MW (${lastLB.peak_hour_local||"—"})` : "last: —",
-      firstFX ? `next: ${firstFX.date_utc} ~ ${Math.round(firstFX.forecast_p50_mw||0).toLocaleString()} MW (${firstFX.peak_hour_local||"—"})` : "next: —"
-    ].join(" | ");
-    pill.textContent = txt;
-
-  }catch(e){
-    pill.textContent = "error";
-    err.textContent = `Failed to load: ${e.message}`;
-    err.style.display = "block";
-  }
-}
-
-async function refreshAll(){
-  await Promise.all(ISOS.map(loadISO));
-  document.getElementById("stamp").textContent = "last update: " + new Date().toLocaleString();
-}
-
-/* ====== DIAGNOSTICS ====== */
-async function runDiagnostics(){
-  const host = DATA_BASE;
-  const targets = [];
-  for(const iso of ISOS){
-    targets.push(`${iso.key}_hist.json`, `${iso.key}_fcst.json`);
-  }
-  const list = document.getElementById("diag");
-  list.innerHTML = "";
-  const results = await Promise.all(targets.map(async f=>{
-    const url = host + f + "?t=" + Date.now();
-    let ok=false, msg="";
-    try{
-      const r = await fetch(url, {cache:"no-store"});
-      ok = r.ok;
-      msg = ok ? "OK" : `HTTP ${r.status}`;
-      if(ok){
-        // lightweight JSON parse to catch syntax errors
-        await r.clone().json();
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { position: 'bottom' },
+          title: { display: false },
+          tooltip: {
+            callbacks: {
+              title(items) {
+                // labels already Date objects formatted below
+                return items?.[0]?.label ?? '';
+              }
+            }
+          }
+        },
+        scales: {
+          x: { ticks: { maxRotation: 0, autoSkip: true } },
+          y: { beginAtZero: false }
+        }
       }
-    }catch(e){ ok=false; msg = e.message; }
-    return {f, ok, msg, url:host+f};
-  }));
-
-  for(const r of results){
-    const cls = r.ok ? "ok" : "fail";
-    list.insertAdjacentHTML("beforeend",
-      `<div class="diag-item"><span>${r.f}</span><span class="${cls}">${r.ok?"✓":"✗"} ${r.msg}</span></div>`);
+    });
   }
-  document.getElementById("diagStamp").textContent = "checked: " + new Date().toLocaleTimeString();
-}
 
-/* ====== BOOT ====== */
-const grid = document.getElementById("grid");
-ISOS.forEach(iso => grid.appendChild(makeCard(iso)));
-document.getElementById("btnRefresh").addEventListener("click", refreshAll);
-document.getElementById("btnDiag").addEventListener("click", runDiagnostics);
-refreshAll();
-runDiagnostics();
-setInterval(refreshAll, REFRESH_MS);
-</script>
+  function coerceTimeSeries(raw) {
+    // Accepts arrays of objects like { timestamp, value } or { time, val } or pairs [t, v]
+    if (!Array.isArray(raw)) return [];
+    const out = [];
+    for (const d of raw) {
+      let t, v;
+      if (Array.isArray(d) && d.length >= 2) { t = d[0]; v = d[1]; }
+      else if (d && typeof d === 'object') {
+        t = d.timestamp ?? d.time ?? d.t ?? d.date;
+        v = d.value ?? d.val ?? d.y ?? d.load ?? d.demand;
+      }
+      const dt = new Date(t);
+      const val = Number(v);
+      if (!isNaN(dt) && isFinite(val)) out.push({ t: dt, v: val });
+    }
+    // sort just in case
+    out.sort((a,b) => a.t - b.t);
+    return out;
+  }
+
+  function mergeLabels(hist, fcst) {
+    const map = new Map();
+    for (const x of hist) map.set(+x.t, x.t);
+    for (const x of fcst) map.set(+x.t, x.t);
+    return Array.from(map.values()).sort((a,b)=>a-b);
+  }
+
+  function seriesToArray(labels, series) {
+    const idx = new Map(series.map(d => [+d.t, d.v]));
+    return labels.map(t => idx.get(+t) ?? null);
+  }
+
+  function findPeakHourLocal(series) {
+    if (!series.length) return null;
+    let best = null;
+    for (const d of series) {
+      if (d == null) continue;
+      if (best == null || d.v > best.v) best = d;
+    }
+    return best ? fmtDateTime(best.t) : null;
+  }
+
+  async function loadISO(iso) {
+    const card = document.getElementById(`card-${iso.id}`);
+    const peak = card?.querySelector('.peak');
+    const last = document.getElementById('last-update');
+    if (!card) return;
+
+    const [histRaw, fcstRaw] = await Promise.all([
+      fetchJSONSafe(iso.hist),
+      fetchJSONSafe(iso.fcst)
+    ]);
+
+    // Error badges (don’t throw; render what we can)
+    const errs = [];
+    if (histRaw?.__error) errs.push(`Hist: ${histRaw.__error}`);
+    if (fcstRaw?.__error) errs.push(`Fcst: ${fcstRaw.__error}`);
+    const errBox = card.querySelector('.errors');
+    if (errBox) errBox.textContent = errs.join(' | ');
+
+    const hist = coerceTimeSeries(histRaw?.series ?? histRaw);
+    const fcst = coerceTimeSeries(fcstRaw?.series ?? fcstRaw);
+
+    // Labels (Date objects) and formatted strings for x-axis
+    const labelsDates = mergeLabels(hist, fcst);
+    const labels = labelsDates.map(d => new Intl.DateTimeFormat('en-US', {
+      timeZone: tz, month: 'short', day: '2-digit', hour: '2-digit'
+    }).format(d));
+
+    const histArr = seriesToArray(labelsDates, hist);
+    const fcstArr = seriesToArray(labelsDates, fcst);
+
+    const canvasId = `chart-${iso.id}`;
+    if (!labels.length || (!histArr.some(n=>n!=null) && !fcstArr.some(n=>n!=null))) {
+      // No data; clear old chart if any
+      if (charts[canvasId]) { charts[canvasId].destroy(); delete charts[canvasId]; }
+      const empty = card.querySelector('.empty');
+      if (empty) empty.textContent = 'No data available.';
+      if (peak) peak.textContent = '—';
+      return;
+    }
+
+    // Peak hour from forecast if available, else history
+    const fcstPairs = (coerceTimeSeries(fcstRaw?.series ?? fcstRaw));
+    const histPairs = (coerceTimeSeries(histRaw?.series ?? histRaw));
+    const peakWhen = findPeakHourLocal(fcstPairs.length ? fcstPairs : histPairs);
+    if (peak) peak.textContent = peakWhen ?? '—';
+
+    renderLineChart(canvasId, labels, histArr, fcstArr);
+
+    if (last) last.textContent = fmtDateTime(new Date());
+  }
+
+  async function checkFiles() {
+    const box = document.getElementById('diag');
+    if (!box) return;
+    box.innerHTML = '<div class="small">Checking files…</div>';
+    const files = [];
+    for (const iso of isoConfigs) { files.push(iso.hist, iso.fcst); }
+
+    const rows = [];
+    for (const f of files) {
+      const url = urlFor(f);
+      try {
+        const r = await fetch(url, { cache: 'no-store' });
+        rows.push(`<div>${f}: ${r.ok ? '<span class="ok">OK</span>' : `<span class="bad">${r.status}</span>`}</div>`);
+      } catch(e) {
+        rows.push(`<div>${f}: <span class="bad">ERROR (${e.message})</span></div>`);
+      }
+    }
+    box.innerHTML = rows.join('');
+  }
+
+  async function init() {
+    // Build cards
+    const grid = document.getElementById('grid');
+    if (!grid) return;
+
+    grid.innerHTML = isoConfigs.map(iso => `
+      <div class="card" id="card-${iso.id}">
+        <h2>${iso.label}</h2>
+        <div class="meta">
+          <div>Predicted peak (local): <strong class="peak">—</strong></div>
+          <div class="errors bad"></div>
+          <div class="empty small"></div>
+        </div>
+        <canvas id="chart-${iso.id}" aria-label="${iso.label} load chart"></canvas>
+      </div>
+    `).join('');
+
+    // Load all ISOs
+    await Promise.allSettled(isoConfigs.map(loadISO));
+  }
+
+  // ---------- Wire up UI ----------
+  document.addEventListener('DOMContentLoaded', () => {
+    const refreshBtn = document.getElementById('refresh');
+    const diagBtn = document.getElementById('run-diag');
+    const last = document.getElementById('last-update');
+
+    if (refreshBtn) refreshBtn.addEventListener('click', init);
+    if (diagBtn) diagBtn.addEventListener('click', checkFiles);
+
+    if (last) last.textContent = '—';
+    init();
+  });
+  </script>
+</head>
+<body>
+  <h1>ISO Daily Peaks — 30-Day Lookback & Forecast</h1>
+  <div class="toolbar">
+    <button id="refresh" type="button">Refresh now</button>
+    <button id="run-diag" type="button">Run file checks</button>
+    <a href="https://github.com/jamesmcgit/forecast" target="_blank" rel="noopener">Repo</a>
+    <span class="small">Last updated: <span id="last-update">—</span></span>
+  </div>
+
+  <div class="grid" id="grid" aria-live="polite"></div>
+
+  <div class="diag" id="diag" aria-live="polite">
+    <div class="small">Diagnostics will appear here.</div>
+  </div>
 </body>
 </html>
