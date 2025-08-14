@@ -135,7 +135,6 @@ function computeRiskDaily(day){
 function riskBadgeClass(r){ if(r==null) return "risk risk-na"; if(r>=80) return "risk risk-alert"; if(r>=70) return "risk risk-caution"; return "risk risk-ok"; }
 function rowRiskClass(r){ if(r==null) return ""; if(r>=80) return "row-alert"; if(r>=70) return "row-caution"; return ""; }
 
-<script>
 /* SAFER RISK SHADING PLUGIN — runs after the chart renders */
 const riskBackgroundPlugin = {
   id: 'riskBackground',
@@ -164,7 +163,6 @@ const riskBackgroundPlugin = {
 
 // Register once (global)
 Chart.register(riskBackgroundPlugin);
-</script>
 
 /* ====== RENDER ====== */
 const charts = {};
@@ -217,7 +215,6 @@ function freshCanvas(isoKey){
   return neu.getContext('2d');
 }
 
-<script>
 function upsertChart(isoKey, series, riskBlocks){
   const ctx = freshCanvas(isoKey);
   if (!ctx) return;
@@ -276,7 +273,6 @@ function upsertChart(isoKey, series, riskBlocks){
     }
   });
 }
-</script>
 
 function renderPast7Table(iso, lb, wxPast){
   const tbody = document.querySelector(`#tblPast-${iso.key} tbody`);
