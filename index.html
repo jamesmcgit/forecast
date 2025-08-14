@@ -43,6 +43,36 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1"></script>
+
+<!-- SAFER RISK SHADING PLUGIN (registered globally, draws after scales exist) -->
+<script>
+const riskBackgroundPlugin = {
+  id: 'riskBackground',
+  afterRender(chart, _args, opts){
+    if (!chart || !chart.ctx || !chart.chartArea) return;
+    const x = chart.scales && chart.scales.x;
+    if (!x || typeof x.getPixelForValue !== 'function') return;
+
+    const { top, bottom } = chart.chartArea;
+    const blocks = (opts && Array.isArray(opts.blocks)) ? opts.blocks : [];
+    for (const b of blocks) {
+      if (!b || !b.date || !b.level) continue;
+      const start = x.getPixelForValue(new Date(b.date + "T00:00:00Z"));
+      const end   = x.getPixelForValue(new Date(b.date + "T23:59:59Z"));
+      if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
+
+      const { ctx } = chart;
+      ctx.save();
+      ctx.fillStyle = (b.level === 'alert') ? 'rgba(255,0,0,0.07)' : 'rgba(255,165,0,0.08)';
+      ctx.fillRect(Math.min(start,end), top, Math.abs(end-start), bottom - top);
+      ctx.restore();
+    }
+  }
+};
+if (window.Chart && !Chart.registry.plugins.get('riskBackground')) {
+  Chart.register(riskBackgroundPlugin);
+}
+</script>
 </head>
 <body>
 <header>
@@ -54,7 +84,7 @@
 </header>
 
 <details open>
-  <summary><strong>Diagnostics</strong> </summary>
+  <summary><strong>Diagnostics</strong> (verifies every JSON file is reachable)</summary>
   <div class="row" style="margin:10px 0">
     <div class="pill">Repo: <span id="repoLabel"></span></div>
     <button id="btnDiag">Run file checks</button>
@@ -66,12 +96,18 @@
 <section id="grid" class="grid"></section>
 
 <script>
-/* ====== CONFIG (edit here if your repo/branch changes) ====== */
+/* ====== CONFIG for jamesmcgit.github.io/forecast ====== */
 const GH_OWNER  = "jamesmcgit";
 const GH_REPO   = "forecast";
 const GH_BRANCH = "main";
-const DATA_DIR  = "data"; // folder containing the JSONs
+const DATA_DIR  = "data";
+
+/* Use GitHub Pages directly (matches your site domain) */
 const DATA_BASE = "https://jamesmcgit.github.io/forecast/data/";
+
+/* If you prefer jsDelivr CDN instead, swap the line above for:
+   const DATA_BASE = `https://cdn.jsdelivr.net/gh/${GH_OWNER}/${GH_REPO}@${GH_BRANCH}/${DATA_DIR}/`;
+*/
 const REFRESH_MS = 60 * 1000;
 
 /* ISOs + canonical time zones + representative coords for weather */
@@ -135,37 +171,7 @@ function computeRiskDaily(day){
 function riskBadgeClass(r){ if(r==null) return "risk risk-na"; if(r>=80) return "risk risk-alert"; if(r>=70) return "risk risk-caution"; return "risk risk-ok"; }
 function rowRiskClass(r){ if(r==null) return ""; if(r>=80) return "row-alert"; if(r>=70) return "row-caution"; return ""; }
 
-/* SAFER RISK SHADING PLUGIN — runs after the chart renders */
-const riskBackgroundPlugin = {
-  id: 'riskBackground',
-  afterRender(chart, _args, opts){
-    // Hard guards: chart, ctx, chartArea, and x-scale must exist
-    if (!chart || !chart.ctx || !chart.chartArea) return;
-    const x = chart.scales && chart.scales.x;
-    if (!x || typeof x.getPixelForValue !== 'function') return;
-
-    const { top, bottom } = chart.chartArea;
-    const blocks = (opts && Array.isArray(opts.blocks)) ? opts.blocks : [];
-    for (const b of blocks) {
-      if (!b || !b.date || !b.level) continue;
-      const start = x.getPixelForValue(new Date(b.date + "T00:00:00Z"));
-      const end   = x.getPixelForValue(new Date(b.date + "T23:59:59Z"));
-      if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
-
-      const { ctx } = chart;
-      ctx.save();
-      ctx.fillStyle = (b.level === 'alert') ? 'rgba(255,0,0,0.07)' : 'rgba(255,165,0,0.08)';
-      ctx.fillRect(Math.min(start,end), top, Math.abs(end-start), bottom - top);
-      ctx.restore();
-    }
-  }
-};
-
-// Register once (global)
-Chart.register(riskBackgroundPlugin);
-
 /* ====== RENDER ====== */
-const charts = {};
 function makeCard(iso){
   const el = document.createElement("div");
   el.className="card"; el.id=`card-${iso.key}`;
@@ -193,25 +199,21 @@ function makeCard(iso){
   return el;
 }
 
-// Safe canvas lifecycle
+// Safe canvas lifecycle (prevents duplicate charts and null context)
 function freshCanvas(isoKey){
   const wrap = document.getElementById(`canvasWrap-${isoKey}`);
-  if(!wrap){
-    const card = document.getElementById(`card-${isoKey}`);
-    const div = document.createElement('div');
-    div.id = `canvasWrap-${isoKey}`;
-    card.insertBefore(div, card.querySelector(`#err-${isoKey}`));
-  }
+  if (!wrap) return null;
+
   const old = document.getElementById(`chart-${isoKey}`);
   if (old) {
     const existing = Chart.getChart(old);
     if (existing) existing.destroy();
+    old.remove();
   }
   const neu = document.createElement('canvas');
   neu.id = `chart-${isoKey}`;
-  const cw = document.getElementById(`canvasWrap-${isoKey}`);
-  if (old && old.parentNode) old.parentNode.replaceChild(neu, old);
-  else { cw.innerHTML = ''; cw.appendChild(neu); }
+  wrap.innerHTML = '';
+  wrap.appendChild(neu);
   return neu.getContext('2d');
 }
 
@@ -219,7 +221,7 @@ function upsertChart(isoKey, series, riskBlocks){
   const ctx = freshCanvas(isoKey);
   if (!ctx) return;
 
-  // Build the master date axis
+  // Build master x-axis across lookback, outlook, and weather (date strings "YYYY-MM-DD")
   const xs = Array.from(new Set([
     ...series.lb.map(d=>d.date_utc),
     ...series.fx.map(d=>d.date_utc),
@@ -227,13 +229,13 @@ function upsertChart(isoKey, series, riskBlocks){
     ...series.wNext.map(d=>d.date)
   ].filter(Boolean))).sort();
 
-  // Ensure at least one label so scales initialize
-  const labelDates = (xs.length ? xs : [new Date().toISOString().slice(0,10)]);
+  // Ensure at least one label so scales initialize even if data is empty
+  const labelDates = xs.length ? xs : [new Date().toISOString().slice(0,10)];
   const labels = labelDates.map(d => new Date(d+"T00:00:00Z"));
 
   const mapBy = (arr, field) => {
     const m = new Map(arr.map(d=>[(d.date_utc||d.date), d[field]]));
-    return labelDates.map(x=> m.get(x) ?? null);
+    return labelDates.map(x => m.get(x) ?? null);
   };
 
   const lb   = mapBy(series.lb, 'peak_mw');
@@ -267,7 +269,7 @@ function upsertChart(isoKey, series, riskBlocks){
       },
       plugins:{
         legend:{ position:'bottom' },
-        // <<< plugin options go here >>>
+        // risk shading options live under options.plugins in Chart.js v4
         riskBackground: { blocks: riskBlocks || [] }
       }
     }
@@ -370,10 +372,7 @@ async function runDiagnostics(){
       const r = await fetch(url, {cache:"no-store"});
       ok = r.ok;
       msg = ok ? "OK" : `HTTP ${r.status}`;
-      if(ok){
-        // lightweight JSON parse to catch syntax errors
-        await r.clone().json();
-      }
+      if(ok){ await r.clone().json(); } // validate JSON
     }catch(e){ ok=false; msg = e.message; }
     return {f, ok, msg, url:host+f};
   }));
