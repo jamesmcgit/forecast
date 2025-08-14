@@ -76,13 +76,13 @@ const REFRESH_MS = 60 * 1000;
 
 /* ISOs + canonical time zones + representative coords for weather */
 const ISOS = [
-  { key:"CAISO", label:"CAISO (CA)",   tz:"America/Los_Angeles", loc:[36.77,-119.42] },
-  { key:"ISONE", label:"ISO-NE (NE)",  tz:"America/New_York",    loc:[42.36,-71.06]  },
-  { key:"PJM",   label:"PJM (MAAC)",   tz:"America/New_York",    loc:[39.95,-75.16]  },
-  { key:"NYISO", label:"NYISO (NY)",   tz:"America/New_York",    loc:[40.71,-74.00]  },
-  { key:"MISO",  label:"MISO (MW)",    tz:"America/Chicago",     loc:[41.88,-87.63]  },
-  { key:"SPP",   label:"SPP (Plains)", tz:"America/Chicago",     loc:[39.09,-94.58]  },
-  { key:"ERCOT", label:"ERCOT (TX)",   tz:"America/Chicago",     loc:[30.27,-97.74]  }
+  { key:"CAISO", label:"CAISO (CA)",   tz:"Pacific", loc:[36.77,-119.42] },
+  { key:"ISONE", label:"ISO-NE (NE)",  tz:"Eastern",    loc:[42.36,-71.06]  },
+  { key:"PJM",   label:"PJM (MAAC)",   tz:"Eastern",    loc:[39.95,-75.16]  },
+  { key:"NYISO", label:"NYISO (NY)",   tz:"Eastern",    loc:[40.71,-74.00]  },
+  { key:"MISO",  label:"MISO (MW)",    tz:"Central",     loc:[41.88,-87.63]  },
+  { key:"SPP",   label:"SPP (Plains)", tz:"Central",     loc:[39.09,-94.58]  },
+  { key:"ERCOT", label:"ERCOT (TX)",   tz:"Central",     loc:[30.27,-97.74]  }
 ];
 document.getElementById("repoLabel").textContent = `${GH_OWNER}/${GH_REPO}@${GH_BRANCH}/${DATA_DIR}`;
 
