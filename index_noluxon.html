@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>ISO Peaks — 30-day Lookback & Outlook (No-Adapter Build)</title>
+<style>
+  :root{--gap:16px}
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;background:#f7f7f9;color:#111}
+  header{padding:16px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+  h1{font-size:1.05rem;margin:0}
+  .meta{color:#666;font-size:.9rem}
+  .grid{display:grid;gap:var(--gap);grid-template-columns:1fr;padding:16px}
+  @media(min-width:1100px){.grid{grid-template-columns:1fr 1fr}}
+  .card{background:#fff;border:1px solid #e6e6ea;border-radius:14px;padding:14px;box-shadow:0 2px 8px rgba(0,0,0,.04)}
+  .card h2{margin:0 0 8px 0;font-size:1rem}
+  .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+  .pill{border:1px solid #ddd;border-radius:999px;padding:3px 10px;font-size:.8rem;color:#333}
+  .err{color:#b00020;font-size:.9rem;margin-top:8px;display:none}
+  canvas{width:100%;height:360px}
+  button{border:1px solid #ddd;background:#fff;border-radius:10px;padding:8px 12px;cursor:pointer}
+  button:hover{background:#f0f0f0}
+  table{width:100%;border-collapse:collapse;margin-top:10px;font-size:.92rem}
+  th,td{border-top:1px solid #eee;padding:6px 8px;text-align:center}
+  thead th{background:#fafafa}
+  .subtle{color:#666;font-size:.85rem}
+  .risk { font-weight:600; padding:2px 8px; border-radius:999px; display:inline-block; min-width:54px; }
+  .risk-alert { background:#ffe8e8; color:#a40000; border:1px solid #f4bebe; }
+  .risk-caution { background:#fff3dd; color:#9a5600; border:1px solid #f1d39c; }
+  .risk-ok { background:#e9f7ef; color:#0b5d2a; border:1px solid #c9edd7; }
+  .risk-na { background:#eee; color:#666; border:1px solid #ddd; }
+  .row-alert { background:#fff4f4; }   /* ≥80% */
+  .row-caution { background:#fff9ed; } /* 70–79.9% */
+  details{margin:0 16px 16px;border-top:1px dashed #ddd;padding-top:10px}
+  .diag-list{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .diag-item{display:flex;justify-content:space-between;gap:8px;background:#fff;border:1px solid #eee;border-radius:10px;padding:6px 10px;font-size:.9rem}
+  .ok{color:#0b5d2a}
+  .fail{color:#b00020}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+</head>
+<body>
+<header>
+  <h1>ISO Daily Peaks — 30-Day Lookback & 30-Day Outlook</h1>
+  <div class="row">
+    <button id="btnRefresh">Refresh now</button>
+    <span class="meta" id="stamp">last update: —</span>
+  </div>
+</header>
+
+<details open>
+  <summary><strong>Diagnostics</strong> (verifies every JSON file is reachable)</summary>
+  <div class="row" style="margin:10px 0">
+    <div class="pill">Data source: <span id="repoLabel"></span></div>
+    <button id="btnDiag">Run file checks</button>
+    <span class="meta" id="diagStamp">—</span>
+  </div>
+  <div id="diag" class="diag-list"></div>
+</details>
+
+<section id="grid" class="grid"></section>
+
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+/* ====== CONFIG ====== */
+const DATA_DIR  = "data"; // folder containing the JSONs, relative to this index.html
+const REFRESH_MS = 60 * 1000;
+
+/* ISOs + canonical time zones (used only for labels) */
+const ISOS = [
+  { key:"CAISO", label:"CAISO (CA)",   tz:"America/Los_Angeles" },
+  { key:"ISONE", label:"ISO-NE (NE)",  tz:"America/New_York"    },
+  { key:"PJM",   label:"PJM (MAAC)",   tz:"America/New_York"    },
+  { key:"NYISO", label:"NYISO (NY)",   tz:"America/New_York"    },
+  { key:"MISO",  label:"MISO (MW)",    tz:"America/Chicago"     },
+  { key:"SPP",   label:"SPP (Plains)", tz:"America/Chicago"     },
+  { key:"ERCOT", label:"ERCOT (TX)",   tz:"America/Chicago"     }
+];
+
+document.getElementById("repoLabel").textContent = "./" + DATA_DIR + "/";
+
+function fmtTZLabel(tz){
+  const part = tz.includes('/') ? tz.split('/')[1] : tz;
+  return part.replace(/_/g,' ');
+}
+
+/* ====== FETCH ====== */
+async function fetchJSON(url){
+  const bust = url + (url.includes("?")?"&":"?") + "t=" + Date.now();
+  const res = await fetch(bust, { cache:"no-store" });
+  if(!res.ok) throw new Error(\`HTTP \${res.status} for \${url}\`);
+  return res.json();
+}
+async function loadDailyFiles(isoKey){
+  let hist=[], fcst=[];
+  try { hist = await fetchJSON(\`./\${DATA_DIR}/\${isoKey}_hist.json\`); } catch(_){}
+  try { fcst = await fetchJSON(\`./\${DATA_DIR}/\${isoKey}_fcst.json\`); } catch(_){}
+  return {hist, fcst};
+}
+
+/* ====== RISK ====== */
+function computeRiskDaily(day){
+  if (Number.isFinite(day?.risk_pct)) return +day.risk_pct;
+  const p50 = day?.forecast_p50_mw, th90 = day?.threshold_last30p90_mw, thMx = day?.threshold_last30max_mw;
+  if(Number.isFinite(p50) && Number.isFinite(th90) && Number.isFinite(thMx) && thMx>th90){
+    const pct = ((p50 - th90) / (thMx - th90)) * 100;
+    return Math.max(0, Math.min(100, +pct.toFixed(1)));
+  }
+  if(Number.isFinite(p50) && Number.isFinite(th90)) return p50 >= th90 ? 70 : 60;
+  return null;
+}
+function riskBadgeClass(r){ if(r==null) return "risk risk-na"; if(r>=80) return "risk risk-alert"; if(r>=70) return "risk risk-caution"; return "risk risk-ok"; }
+function rowRiskClass(r){ if(r==null) return ""; if(r>=80) return "row-alert"; if(r>=70) return "row-caution"; return ""; }
+
+/* ====== CHART RISK SHADING (plugin) ====== */
+const riskBackgroundPlugin = {
+  id: 'riskBackground',
+  beforeDraw(chart, args, opts){
+    if(!chart || !chart.ctx || !chart.chartArea) return;
+    const scales = chart.scales || {};
+    const x = scales.x;
+    if(!x || typeof x.getPixelForValue !== 'function') return;
+    const { top, bottom } = chart.chartArea;
+    const blocks = (opts && Array.isArray(opts.blocks)) ? opts.blocks : [];
+    for (const b of blocks) {
+      if(!b || !b.date || !b.level) continue;
+      const idx = chart.data.labels.indexOf(b.date);
+      if (idx < 0) continue;
+      const start = x.getPixelForValue(idx);
+      const end   = x.getPixelForValue(idx + 1);
+      if(!Number.isFinite(start) || !Number.isFinite(end)) continue;
+      const { ctx } = chart;
+      ctx.save();
+      ctx.fillStyle = (b.level === 'alert') ? 'rgba(255,0,0,0.07)' : 'rgba(255,165,0,0.08)';
+      ctx.fillRect(Math.min(start,end), top, Math.abs(end-start), bottom - top);
+      ctx.restore();
+    }
+  }
+};
+
+/* ====== RENDER ====== */
+const charts = {};
+function makeCard(iso){
+  const el = document.createElement("div");
+  el.className="card"; el.id=\`card-\${iso.key}\`;
+  const tzLabel = fmtTZLabel(iso.tz);
+  el.innerHTML = \`
+    <h2>\${iso.label} <span class="subtle">(\${tzLabel})</span></h2>
+    <div class="row"><span class="pill" id="pill-\${iso.key}">loading…</span></div>
+    <div id="canvasWrap-\${iso.key}"><canvas id="chart-\${iso.key}"></canvas></div>
+    <div class="err" id="err-\${iso.key}"></div>
+
+    <div class="subtle" style="margin-top:10px;">Past 7 days — observed peak hour (local time)</div>
+    <table id="tblPast-\${iso.key}">
+      <thead><tr><th>Date</th><th>Peak Hour (local)</th><th>Actual Peak (MW)</th></tr></thead>
+      <tbody></tbody>
+    </table>
+
+    <div class="subtle" style="margin-top:14px;">Next 7 days — predicted peak hour (local time)</div>
+    <table id="tblNext-\${iso.key}">
+      <thead><tr>
+        <th>Date</th><th>Peak Hour (local)</th><th>P50 (MW)</th><th>P90 (MW)</th>
+        <th>30d 90th</th><th>30d Max</th><th>Risk</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+  \`;
+  return el;
+}
+
+function freshCanvas(isoKey){
+  const wrap = document.getElementById(\`canvasWrap-\${isoKey}\`);
+  if(!wrap){
+    const card = document.getElementById(\`card-\${isoKey}\`);
+    const div = document.createElement('div');
+    div.id = \`canvasWrap-\${isoKey}\`;
+    card.insertBefore(div, card.querySelector(\`#err-\${isoKey}\`));
+  }
+  const old = document.getElementById(\`chart-\${isoKey}\`);
+  if (old) {
+    const existing = Chart.getChart(old);
+    if (existing) existing.destroy();
+  }
+  const neu = document.createElement('canvas');
+  neu.id = \`chart-\${isoKey}\`;
+  const cw = document.getElementById(\`canvasWrap-\${isoKey}\`);
+  if (old && old.parentNode) old.parentNode.replaceChild(neu, old);
+  else { cw.innerHTML = ''; cw.appendChild(neu); }
+  return neu.getContext('2d');
+}
+
+function toLabels(xs){
+  // xs are date strings "YYYY-MM-DD"
+  return xs;
+}
+
+function upsertChart(isoKey, xs, series, riskBlocks){
+  const ctx = freshCanvas(isoKey);
+  charts[isoKey] = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: toLabels(xs),
+      datasets: [
+        { label:'Daily Peak (Lookback)', data:series.lb,  yAxisID:'yMW', pointRadius:0, borderWidth:2 },
+        { label:'Outlook P10',           data:series.fx10, yAxisID:'yMW', pointRadius:0, borderWidth:0 },
+        { label:'Outlook P90',           data:series.fx90, yAxisID:'yMW', pointRadius:0, borderWidth:0, fill:{target:'origin', above:true} },
+        { label:'Outlook P50',           data:series.fx50, yAxisID:'yMW', pointRadius:0, borderWidth:2 }
+      ]
+    },
+    options: {
+      responsive:true, animation:false, parsing:false,
+      interaction:{ mode:'index', intersect:false },
+      scales:{
+        x:{ type:'category', ticks:{ maxRotation:0, autoSkip:true } },
+        yMW:{ position:'left',  title:{display:true,text:'MW'}, beginAtZero:false }
+      },
+      plugins:{ 
+        legend:{ position:'bottom' },
+        riskBackground: { blocks: riskBlocks || [] }
+      }
+    },
+    plugins: [riskBackgroundPlugin]
+  });
+}
+
+function renderPast7Table(iso, lb){
+  const tbody = document.querySelector(\`#tblPast-\${iso.key} tbody\`);
+  tbody.innerHTML = "";
+  lb.slice(-7).forEach(d=>{
+    const p  = Number.isFinite(d.peak_mw) ? Math.round(d.peak_mw).toLocaleString() : "—";
+    const local = d.peak_hour_local || "—";
+    tbody.insertAdjacentHTML("beforeend", \`
+      <tr><td>\${d.date_utc}</td><td>\${local} \${fmtTZLabel(iso.tz)}</td><td>\${p}</td></tr>
+    \`);
+  });
+}
+
+function renderNext7Table(iso, fx){
+  const tbody = document.querySelector(\`#tblNext-\${iso.key} tbody\`);
+  tbody.innerHTML = "";
+  fx.slice(0,7).forEach(d=>{
+    const r = computeRiskDaily(d);
+    const cls = rowRiskClass(r), badge = riskBadgeClass(r);
+    const p50 = Number.isFinite(d.forecast_p50_mw) ? Math.round(d.forecast_p50_mw).toLocaleString() : "—";
+    const p90 = Number.isFinite(d.forecast_p90_mw) ? Math.round(d.forecast_p90_mw).toLocaleString() : "—";
+    const th90 = Number.isFinite(d.threshold_last30p90_mw) ? Math.round(d.threshold_last30p90_mw).toLocaleString() : "—";
+    const thMx = Number.isFinite(d.threshold_last30max_mw) ? Math.round(d.threshold_last30max_mw).toLocaleString() : "—";
+    const local = d.peak_hour_local || "—";
+    const riskTxt = (r==null) ? "N/A" : \`\${r}%\`;
+    tbody.insertAdjacentHTML("beforeend", \`
+      <tr class="\${cls}">
+        <td>\${d.date_utc}</td><td>\${local} \${fmtTZLabel(iso.tz)}</td>
+        <td>\${p50}</td><td>\${p90}</td><td>\${th90}</td><td>\${thMx}</td>
+        <td><span class="\${badge}">\${riskTxt}</span></td>
+      </tr>
+    \`);
+  });
+}
+
+/* ====== CONTROLLER ====== */
+async function loadISO(iso){
+  const pill = document.getElementById(\`pill-\${iso.key}\`);
+  const err  = document.getElementById(\`err-\${iso.key}\`);
+  err.style.display="none"; err.textContent="";
+  try{
+    pill.textContent = "loading data…";
+    const {hist, fcst} = await loadDailyFiles(iso.key);
+    const lb = (hist||[]).slice().sort((a,b)=> a.date_utc.localeCompare(b.date_utc)).slice(-30);
+    const fx = (fcst||[]).slice().sort((a,b)=> a.date_utc.localeCompare(b.date_utc)).slice(0,30);
+
+    // Union of dates
+    const xsSet = new Set([...lb.map(d=>d.date_utc), ...fx.map(d=>d.date_utc)]);
+    const xs = Array.from(xsSet).sort();
+
+    const map = (arr, field) => {
+      const m = new Map(arr.map(d=>[d.date_utc, d[field]]));
+      return xs.map(x=> (Number.isFinite(m.get(x)) ? m.get(x) : null));
+    };
+
+    const series = {
+      lb:   map(lb, 'peak_mw'),
+      fx10: map(fx, 'forecast_p10_mw'),
+      fx50: map(fx, 'forecast_p50_mw'),
+      fx90: map(fx, 'forecast_p90_mw')
+    };
+
+    const riskBlocks = fx.map(d=>{
+      const r = computeRiskDaily(d);
+      if(r==null) return null;
+      return { date: d.date_utc, level: (r>=80)?'alert':(r>=70?'caution':null) };
+    }).filter(Boolean);
+
+    upsertChart(iso.key, xs, series, riskBlocks);
+    renderPast7Table(iso, lb);
+    renderNext7Table(iso, fx);
+
+    const lastLB = lb[lb.length-1], firstFX = fx[0];
+    const txt = [
+      lastLB ? \`last: \${lastLB.date_utc} ~ \${Math.round(lastLB.peak_mw).toLocaleString()} MW (\${lastLB.peak_hour_local||"—"})\` : "last: —",
+      firstFX ? \`next: \${firstFX.date_utc} ~ \${Math.round(firstFX.forecast_p50_mw||0).toLocaleString()} MW (\${firstFX.peak_hour_local||"—"})\` : "next: —"
+    ].join(" | ");
+    pill.textContent = txt;
+
+  }catch(e){
+    pill.textContent = "error";
+    err.textContent = \`Failed to load: \${e.message}\`;
+    err.style.display = "block";
+  }
+}
+
+async function refreshAll(){
+  await Promise.all(ISOS.map(loadISO));
+  document.getElementById("stamp").textContent = "last update: " + new Date().toLocaleString();
+}
+
+/* ====== DIAGNOSTICS ====== */
+async function runDiagnostics(){
+  const targets = [];
+  for(const iso of ISOS){
+    targets.push(\`\${iso.key}_hist.json\`, \`\${iso.key}_fcst.json\`);
+  }
+  const list = document.getElementById("diag");
+  list.innerHTML = "";
+  const results = await Promise.all(targets.map(async f=>{
+    const url = "./" + DATA_DIR + "/" + f + "?t=" + Date.now();
+    let ok=false, msg="";
+    try{
+      const r = await fetch(url, {cache:"no-store"});
+      ok = r.ok;
+      msg = ok ? "OK" : \`HTTP \${r.status}\`;
+      if(ok){
+        await r.clone().json(); // parse test
+      }
+    }catch(e){ ok=false; msg = e.message; }
+    return {f, ok, msg, url};
+  }));
+
+  for(const r of results){
+    const cls = r.ok ? "ok" : "fail";
+    list.insertAdjacentHTML("beforeend",
+      \`<div class="diag-item"><span>\${r.f}</span><span class="\${cls}">\${r.ok?"✓":"✗"} \${r.msg}</span></div>\`);
+  }
+  document.getElementById("diagStamp").textContent = "checked: " + new Date().toLocaleTimeString();
+}
+
+/* ====== BOOT ====== */
+const grid = document.getElementById("grid");
+ISOS.forEach(iso => grid.appendChild(makeCard(iso)));
+document.getElementById("btnRefresh").addEventListener("click", refreshAll);
+document.getElementById("btnDiag").addEventListener("click", runDiagnostics);
+refreshAll();
+runDiagnostics();
+setInterval(refreshAll, REFRESH_MS);
+}); // end DOMContentLoaded
+</script>
+</body>
+</html>
