@@ -84,7 +84,7 @@ if (window.Chart && !Chart.registry.plugins.get('riskBackground')) {
 </header>
 
 <details open>
-  <summary><strong>Diagnostics</strong> (verifies every JSON file is reachable)</summary>
+  <summary><strong>Diagnostics</strong> </summary>
   <div class="row" style="margin:10px 0">
     <div class="pill">Repo: <span id="repoLabel"></span></div>
     <button id="btnDiag">Run file checks</button>
@@ -103,7 +103,7 @@ const GH_BRANCH = "main";
 const DATA_DIR  = "data";
 
 /* Use GitHub Pages directly (matches your site domain) */
-const DATA_BASE = "https://jamesmcgit.github.io/forecast/data/";
+const DATA_BASE = "https://cdn.jsdelivr.net/gh/jamesmcgit/forecast@main/data/";
 
 /* If you prefer jsDelivr CDN instead, swap the line above for:
    const DATA_BASE = `https://cdn.jsdelivr.net/gh/${GH_OWNER}/${GH_REPO}@${GH_BRANCH}/${DATA_DIR}/`;
